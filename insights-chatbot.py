@@ -1,7 +1,8 @@
 import streamlit as st
 import os
 import faiss, pickle, numpy as np
-from openai import OpenAI
+import time
+from openai import OpenAI, RateLimitError
 
 # ─── Configure OpenAI client ─────────────────────────────────────────
 os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
@@ -24,6 +25,20 @@ with st.sidebar:
     show_sources = st.checkbox("Show retrieved excerpts", value=False)
     if st.button("🗑️ Clear chat history"):
         st.session_state.chat_history = []
+
+# ─── Safe Chat Completion Function with Retry ───────────────────────
+def safe_chat_completion(prompt, retries=3, delay=3):
+    for attempt in range(retries):
+        try:
+            return client.chat.completions.create(
+                model="gpt-4o-mini",  # Replace with gpt-4.1-mini or gpt-3.5-turbo if desired
+                messages=[{"role": "user", "content": prompt}]
+            )
+        except RateLimitError:
+            if attempt < retries - 1:
+                time.sleep(delay * (attempt + 1))  # exponential backoff
+            else:
+                return None
 
 # ─── Chat Input ─────────────────────────────────────────────────────
 if prompt := st.chat_input("Ask a question about the grantee impact reports:"):
@@ -55,12 +70,12 @@ if prompt := st.chat_input("Ask a question about the grantee impact reports:"):
         f"Question: {prompt}\nAnswer:"
     )
 
-    # 4. Generate answer
-    chat_resp = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[{"role": "user", "content": qa_prompt}]
-    )
-    answer = chat_resp.choices[0].message.content
+    # 4. Generate answer with retry + graceful fallback
+    chat_resp = safe_chat_completion(qa_prompt)
+    if chat_resp is None:
+        answer = "⚠️ We're hitting request limits to the model. Please try again in a few seconds."
+    else:
+        answer = chat_resp.choices[0].message.content
 
     # 5. Save interaction
     st.session_state.chat_history.append({
