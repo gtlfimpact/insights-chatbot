@@ -26,6 +26,19 @@ with st.sidebar:
     if st.button("🗑️ Clear chat history"):
         st.session_state.chat_history = []
 
+# ─── Display History (oldest first, newest last) ────────────────────
+for i, turn in enumerate(st.session_state.chat_history):
+    with st.chat_message("user"):
+        st.markdown(f"**Q{i+1}:** {turn['question']}")
+    with st.chat_message("assistant"):
+        st.markdown(f"**A{i+1}:** {turn['answer']}")
+        if turn.get("sources"):
+            with st.expander("🔍 View retrieved excerpts"):
+                for j, (chunk, source) in enumerate(turn["sources"][:5]):
+                    st.markdown(f"**{j+1}. Source: _{source}_**")
+                    st.markdown(chunk)
+                    st.markdown("---")
+
 # ─── Safe Chat Completion Function with Retry ───────────────────────
 def safe_chat_completion(prompt, retries=3, delay=3):
     for attempt in range(retries):
@@ -40,58 +53,51 @@ def safe_chat_completion(prompt, retries=3, delay=3):
             else:
                 return None
 
-# ─── Chat Input + Process ───────────────────────────────────────────
-with st.container():
-    prompt = st.chat_input("Ask a question about the grantee impact reports:")
+# ─── Chat Input LAST to keep it bottom-aligned ──────────────────────
+prompt = st.chat_input("Ask a question about the grantee impact reports:")
+if prompt:
+    with st.spinner("Thinking..."):
+        # 1. Embed query
+        emb_resp = client.embeddings.create(
+            input=[prompt],
+            model="text-embedding-ada-002"
+        )
+        xq = np.array(emb_resp.data[0].embedding, dtype="float32").reshape(1, -1)
+        faiss.normalize_L2(xq)
 
-    if prompt:
-        with st.spinner("Thinking..."):
-            emb_resp = client.embeddings.create(
-                input=[prompt],
-                model="text-embedding-ada-002"
-            )
-            xq = np.array(emb_resp.data[0].embedding, dtype="float32").reshape(1, -1)
-            faiss.normalize_L2(xq)
+        # 2. Retrieve top 50 chunks and deduplicate
+        D, I = index.search(xq, 50)
+        retrieved = [(docs[i], meta[i]["file"]) for i in I[0]]
+        seen = set()
+        unique_chunks = []
+        for text, source in retrieved:
+            if text not in seen:
+                unique_chunks.append((text, source))
+                seen.add(text)
 
-            D, I = index.search(xq, 50)
-            retrieved = [(docs[i], meta[i]["file"]) for i in I[0]]
-            seen = set()
-            unique_chunks = []
-            for text, source in retrieved:
-                if text not in seen:
-                    unique_chunks.append((text, source))
-                    seen.add(text)
+        context_text = "\n\n".join(chunk for chunk, _ in unique_chunks)
 
-            context_text = "\n\n".join(chunk for chunk, _ in unique_chunks)
+        # 3. Build prompt
+        qa_prompt = (
+            "You are a helpful assistant reading excerpts from grantee impact reports. "
+            "Use the excerpts below to answer the user question in a clear, accurate, and complete way.\n\n"
+            f"{context_text}\n\n"
+            f"Question: {prompt}\nAnswer:"
+        )
 
-            qa_prompt = (
-                "You are a helpful assistant reading excerpts from grantee impact reports. "
-                "Use the excerpts below to answer the user question in a clear, accurate, and complete way.\n\n"
-                f"{context_text}\n\n"
-                f"Question: {prompt}\nAnswer:"
-            )
+        # 4. Generate answer
+        chat_resp = safe_chat_completion(qa_prompt)
+        if chat_resp is None:
+            answer = "⚠️ We're hitting request limits to the model. Please try again in a few seconds."
+        else:
+            answer = chat_resp.choices[0].message.content
 
-            chat_resp = safe_chat_completion(qa_prompt)
-            if chat_resp is None:
-                answer = "⚠️ We're hitting request limits to the model. Please try again in a few seconds."
-            else:
-                answer = chat_resp.choices[0].message.content
+        # 5. Save interaction
+        st.session_state.chat_history.append({
+            "question": prompt,
+            "answer": answer,
+            "sources": unique_chunks if show_sources else None
+        })
 
-            st.session_state.chat_history.append({
-                "question": prompt,
-                "answer": answer,
-                "sources": unique_chunks if show_sources else None
-            })
-
-# ─── Display History (latest at bottom, above input) ───────────────
-for i, turn in enumerate(st.session_state.chat_history):
-    with st.chat_message("user"):
-        st.markdown(f"**Q{i+1}:** {turn['question']}")
-    with st.chat_message("assistant"):
-        st.markdown(f"**A{i+1}:** {turn['answer']}")
-        if turn.get("sources"):
-            with st.expander("🔍 View retrieved excerpts"):
-                for j, (chunk, source) in enumerate(turn["sources"][:5]):
-                    st.markdown(f"**{j+1}. Source: _{source}_**")
-                    st.markdown(chunk)
-                    st.markdown("---")
+        # 6. Rerun app to display latest exchange
+        st.experimental_rerun()
