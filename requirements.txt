@@ -1,0 +1,9 @@
+streamlit
+openai
+faiss-cpu
+PyPDF2
+python-docx
+google-api-python-client
+google-auth
+google-auth-httplib2
+google-auth-oauthlib
