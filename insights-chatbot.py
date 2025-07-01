@@ -1,7 +1,7 @@
 # Deployment-Ready Streamlit App with Auto-Updating from Google Drive
 
 # 1. Install dependencies
-!pip install --quiet openai faiss-cpu streamlit PyPDF2 python-docx google-api-python-client google-auth-httplib2 google-auth-oauthlib
+#!pip install --quiet openai faiss-cpu streamlit PyPDF2 python-docx google-api-python-client google-auth-httplib2 google-auth-oauthlib
 
 # 2. Authenticate Google Drive (for scheduled refresh, use service account in production)
 from google.colab import auth
