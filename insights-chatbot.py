@@ -1,8 +1,5 @@
 # Deployment-Ready Streamlit App with Auto-Updating from Google Drive
 
-# 1. Install dependencies
-#!pip install --quiet openai faiss-cpu streamlit PyPDF2 python-docx google-api-python-client google-auth-httplib2 google-auth-oauthlib
-
 # 2. Authenticate Google Drive (for scheduled refresh, use service account in production)
 from google.colab import auth
 from googleapiclient.discovery import build
@@ -154,8 +151,6 @@ faiss.write_index(index, "faiss_index.bin")
 with open("meta.pkl","wb") as f: pickle.dump(meta, f)
 with open("docs.pkl","wb") as f: pickle.dump(docs, f)
 
-# 7. Streamlit App (save as app.py)
-%%writefile insights-chatbot.py
 import streamlit as st
 import openai, faiss, pickle, numpy as np
 
@@ -183,17 +178,7 @@ if query:
     )
     st.write(resp['choices'][0]['message']['content'])
 
-# 8. requirements.txt
-%%writefile requirements.txt
-streamlit
-openai
-faiss-cpu
-PyPDF2
-python-docx
-google-api-python-client
-google-auth
-google-auth-httplib2
-google-auth-oauthlib
+
 
 # Now upload to GitHub and deploy at streamlit.io/cloud
 # Set OPENAI_API_KEY in Streamlit Cloud secrets manager
