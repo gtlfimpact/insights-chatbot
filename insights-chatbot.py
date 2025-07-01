@@ -79,7 +79,7 @@ if prompt := st.chat_input("Ask a question about the grantee impact reports:"):
                 seen.add(text)
 
         context_text = "\n\n".join(chunk for chunk, _ in unique_chunks)
-
+a
         # 3. Build prompt
         qa_prompt = (
             "You are a helpful assistant reading excerpts from grantee impact reports. "
