@@ -9,51 +9,75 @@ client = OpenAI()
 
 # ─── Load pre-built index + data ────────────────────────────────────
 index = faiss.read_index("faiss_index.bin")
-meta   = pickle.load(open("meta.pkl", "rb"))
-docs   = pickle.load(open("docs.pkl", "rb"))
+meta  = pickle.load(open("meta.pkl", "rb"))
+docs  = pickle.load(open("docs.pkl", "rb"))
 
-# ─── Streamlit UI ────────────────────────────────────────────────────
-st.title("Grantee Report Chatbot")
-
+# ─── Initialize session state ───────────────────────────────────────
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
-query = st.text_input("Ask a question about the grantee impact reports:")
+# ─── Streamlit UI Layout ────────────────────────────────────────────
+st.title("Grantee Report Chatbot")
 
-if query:
-    # 1) Embed the prompt
+with st.sidebar:
+    st.markdown("### Settings")
+    show_sources = st.checkbox("Show retrieved excerpts", value=False)
+    if st.button("🗑️ Clear chat history"):
+        st.session_state.chat_history = []
+
+# ─── Chat Input ─────────────────────────────────────────────────────
+if prompt := st.chat_input("Ask a question about the grantee impact reports:"):
+    # 1. Embed query
     emb_resp = client.embeddings.create(
-        input=[query],
+        input=[prompt],
         model="text-embedding-ada-002"
     )
-    vector = emb_resp.data[0].embedding
-    xq     = np.array(vector, dtype="float32").reshape(1, -1)
+    xq = np.array(emb_resp.data[0].embedding, dtype="float32").reshape(1, -1)
     faiss.normalize_L2(xq)
 
-    # 2) Retrieve top 30 chunks and deduplicate
-    D, I = index.search(xq, 30)
-    chunks = [docs[i] for i in I[0]]
-    unique_chunks = list(set(chunks))
-    combined = "\n\n".join(unique_chunks)
+    # 2. Retrieve top 50 chunks and deduplicate
+    D, I = index.search(xq, 50)
+    retrieved = [(docs[i], meta[i]["file"]) for i in I[0]]
+    seen = set()
+    unique_chunks = []
+    for text, source in retrieved:
+        if text not in seen:
+            unique_chunks.append((text, source))
+            seen.add(text)
 
-    # 3) Ask GPT-4 with broader context
-    prompt = (
-        "Use the excerpts below to answer the question. You may see mentions of different grantee organizations or themes.\n\n"
-        f"{combined}\n\n"
-        f"Question: {query}\nAnswer:"
+    context_text = "\n\n".join(chunk for chunk, _ in unique_chunks)
+
+    # 3. Build prompt
+    qa_prompt = (
+        "You are a helpful assistant reading excerpts from grantee impact reports. "
+        "Use the excerpts below to answer the user question in a clear, accurate, and complete way.\n\n"
+        f"{context_text}\n\n"
+        f"Question: {prompt}\nAnswer:"
     )
+
+    # 4. Generate answer
     chat_resp = client.chat.completions.create(
         model="gpt-4o",
-        messages=[{"role": "user", "content": prompt}]
+        messages=[{"role": "user", "content": qa_prompt}]
     )
     answer = chat_resp.choices[0].message.content
 
-    # 4) Store and show
-    st.session_state.chat_history.append({"question": query, "answer": answer})
-    query = ""  # clear input
+    # 5. Save interaction
+    st.session_state.chat_history.append({
+        "question": prompt,
+        "answer": answer,
+        "sources": unique_chunks if show_sources else None
+    })
 
-# Display all previous Q&A
-for i, turn in enumerate(st.session_state.chat_history):
-    st.markdown(f"**Q{i+1}:** {turn['question']}")
-    st.markdown(f"**A{i+1}:** {turn['answer']}")
-    st.markdown("---")
+# ─── Display History (latest at top) ────────────────────────────────
+for i, turn in enumerate(reversed(st.session_state.chat_history)):
+    with st.chat_message("user"):
+        st.markdown(f"**Q{len(st.session_state.chat_history) - i}:** {turn['question']}")
+    with st.chat_message("assistant"):
+        st.markdown(f"**A{len(st.session_state.chat_history) - i}:** {turn['answer']}")
+        if turn.get("sources"):
+            with st.expander("🔍 View retrieved excerpts"):
+                for j, (chunk, source) in enumerate(turn["sources"][:5]):
+                    st.markdown(f"**{j+1}. Source: _{source}_**")
+                    st.markdown(chunk)
+                    st.markdown("---")
