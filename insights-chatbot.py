@@ -26,7 +26,7 @@ with st.sidebar:
     if st.button("🗑️ Clear chat history"):
         st.session_state.chat_history = []
 
-# ─── Display History (oldest first, newest last) ────────────────────
+# ─── Display Chat History (Oldest to Newest) ────────────────────────
 for i, turn in enumerate(st.session_state.chat_history):
     with st.chat_message("user"):
         st.markdown(f"**Q{i+1}:** {turn['question']}")
@@ -39,7 +39,7 @@ for i, turn in enumerate(st.session_state.chat_history):
                     st.markdown(chunk)
                     st.markdown("---")
 
-# ─── Safe Chat Completion Function with Retry ───────────────────────
+# ─── Safe Completion with Retry ─────────────────────────────────────
 def safe_chat_completion(prompt, retries=3, delay=3):
     for attempt in range(retries):
         try:
@@ -53,7 +53,7 @@ def safe_chat_completion(prompt, retries=3, delay=3):
             else:
                 return None
 
-# ─── Chat Input LAST to keep it bottom-aligned ──────────────────────
+# ─── Prompt Input at Bottom ─────────────────────────────────────────
 prompt = st.chat_input("Ask a question about the grantee impact reports:")
 if prompt:
     with st.spinner("Thinking..."):
@@ -77,7 +77,7 @@ if prompt:
 
         context_text = "\n\n".join(chunk for chunk, _ in unique_chunks)
 
-        # 3. Build prompt
+        # 3. Prompt engineering
         qa_prompt = (
             "You are a helpful assistant reading excerpts from grantee impact reports. "
             "Use the excerpts below to answer the user question in a clear, accurate, and complete way.\n\n"
@@ -85,16 +85,19 @@ if prompt:
             f"Question: {prompt}\nAnswer:"
         )
 
-        # 4. Generate answer
+        # 4. Completion
         chat_resp = safe_chat_completion(qa_prompt)
         if chat_resp is None:
             answer = "⚠️ We're hitting request limits to the model. Please try again in a few seconds."
         else:
             answer = chat_resp.choices[0].message.content
 
-        # 5. Save interaction
+        # 5. Save to chat history
         st.session_state.chat_history.append({
             "question": prompt,
             "answer": answer,
             "sources": unique_chunks if show_sources else None
         })
+
+        # 6. Trigger a rerun to show latest immediately
+        st.rerun()
