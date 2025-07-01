@@ -98,6 +98,3 @@ if prompt:
             "answer": answer,
             "sources": unique_chunks if show_sources else None
         })
-
-        # 6. Rerun app to display latest exchange
-        st.experimental_rerun()
