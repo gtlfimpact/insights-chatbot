@@ -1,3 +1,22 @@
+# ─── Download model assets from GitHub release ──────────────────────
+import os, requests
+
+def fetch_once(url, path):
+    if os.path.exists(path): 
+        return
+    print(f"Downloading {path} ...")
+    r = requests.get(url, stream=True)
+    r.raise_for_status()
+    with open(path, "wb") as f:
+        for chunk in r.iter_content(1 << 20):
+            f.write(chunk)
+    print(f"Saved {path}")
+
+BASE = "https://github.com/gtlfimpact/insights-chatbot/releases/download/v0.1.0"
+fetch_once(f"{BASE}/faiss_index.bin", "faiss_index.bin")
+fetch_once(f"{BASE}/meta.pkl", "meta.pkl")
+fetch_once(f"{BASE}/docs.pkl", "docs.pkl")
+
 import streamlit as st
 import os
 import faiss, pickle, numpy as np
